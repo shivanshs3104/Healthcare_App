@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CareDesk | Healthcare Management</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+}
+header {
+    background: #0f766e;
+    color: white;
+    padding: 20px 6%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+header h2 { margin: 0; }
+main { max-width: 1050px; margin: 30px auto; padding: 0 18px; }
+.card {
+    background: white;
+    padding: 22px;
+    margin-bottom: 22px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px #0000000b;
+}
+input, select, textarea, button {
+    padding: 11px;
+    margin: 5px 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+}
+input, select, textarea { width: 100%; }
+button {
+    background: #0f766e;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+button:hover { background: #115e59; }
+.danger { background: #dc2626; }
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+}
+.item {
+    padding: 12px;
+    margin: 8px 0;
+    background: #f8fafc;
+    border-radius: 7px;
+    border: 1px solid #e2e8f0;
+}
+.hidden { display: none; }
+#message { white-space: pre-wrap; margin: 12px 0; }
+.muted { color: #64748b; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+    <h2>CareDesk</h2>
+    <button id="logoutBtn" class="hidden" onclick="logout()">Logout</button>
+</header>
+
+<main>
+    <div id="message"></div>
+
+    <section id="authSection" class="grid">
+        <div class="card">
+            <h2>Welcome back</h2>
+            <p class="muted">Log in to manage your healthcare records.</p>
+            <form id="loginForm">
+                <input id="loginEmail" type="email" placeholder="Email" required>
+                <input id="loginPassword" type="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Create account</h2>
+            <form id="registerForm">
+                <input id="regName" placeholder="Full name" required>
+                <input id="regEmail" type="email" placeholder="Email" required>
+                <input id="regPassword" type="password"
+                       placeholder="Password (minimum 8 characters)"
+                       minlength="8" required>
+                <button type="submit">Register</button>
+            </form>
+        </div>
+    </section>
+
+    <section id="dashboard" class="hidden">
+        <div class="card">
+            <h2>Healthcare Dashboard</h2>
+            <p class="muted">Manage patients, doctors and assignments.</p>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Add patient</h3>
+                <form id="patientForm">
+                    <input id="pName" placeholder="Patient name" required>
+                    <input id="pAge" type="number" min="1" max="120"
+                           placeholder="Age" required>
+                    <select id="pGender" required>
+                        <option value="">Select gender</option>
+                        <option>Male</option>
+                        <option>Female</option>
+                        <option>Other</option>
+                    </select>
+                    <textarea id="pAddress" placeholder="Address" required></textarea>
+                    <input id="pPhone" placeholder="Phone">
+                    <button type="submit">Add patient</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Add doctor</h3>
+                <form id="doctorForm">
+                    <input id="dName" placeholder="Doctor name" required>
+                    <input id="dSpecialization" placeholder="Specialization" required>
+                    <input id="dEmail" type="email" placeholder="Doctor email" required>
+                    <input id="dPhone" placeholder="Phone">
+                    <button type="submit">Add doctor</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Assign doctor</h3>
+                <form id="mappingForm">
+                    <select id="mapPatient" required>
+                        <option value="">Select patient</option>
+                    </select>
+                    <select id="mapDoctor" required>
+                        <option value="">Select doctor</option>
+                    </select>
+                    <button type="submit">Assign doctor</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Patients</h3>
+                <div id="patientsList"></div>
+            </div>
+            <div class="card">
+                <h3>Doctors</h3>
+                <div id="doctorsList"></div>
+            </div>
+            <div class="card">
+                <h3>Assignments</h3>
+                <div id="mappingsList"></div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<script>
+let token = sessionStorage.getItem("access") || "";
+let patients = [];
+let doctors = [];
+
+const $ = id => document.getElementById(id);
+
+function message(text, error = false) {
+    $("message").textContent = text;
+    $("message").style.color = error ? "#dc2626" : "#0f766e";
+}
+
+async function api(url, options = {}) {
+    const headers = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+    };
+
+    const response = await fetch(url, { ...options, headers });
+
+    if (response.status === 204) return null;
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        throw new Error(
+            typeof data === "object" ? JSON.stringify(data) : "Request failed"
+        );
+    }
+
+    return data;
+}
+
+function showDashboard() {
+    $("authSection").classList.add("hidden");
+    $("dashboard").classList.remove("hidden");
+    $("logoutBtn").classList.remove("hidden");
+    loadData();
+}
+
+function logout() {
+    token = "";
+    sessionStorage.removeItem("access");
+    sessionStorage.removeItem("refresh");
+    $("dashboard").classList.add("hidden");
+    $("authSection").classList.remove("hidden");
+    $("logoutBtn").classList.add("hidden");
+    message("You have logged out.");
+}
+
+$("registerForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+        await api("/api/auth/register/", {
+            method: "POST",
+            body: JSON.stringify({
+                name: $("regName").value,
+                email: $("regEmail").value,
+                password: $("regPassword").value
+            })
+        });
+        message("Registration successful. Please log in.");
+        $("registerForm").reset();
+    } catch (error) {
+        message(error.message, true);
+    }
+});
+
+$("loginForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+        const data = await api("/api/auth/login/", {
+            method: "POST",
+            body: JSON.stringify({
+                email: $("loginEmail").value,
+                password: $("loginPassword").value
+            })
+        });
+
+        token = data.access;
+        sessionStorage.setItem("access", data.access);
+        sessionStorage.setItem("refresh", data.refresh);
+        message("Login successful.");
+        showDashboard();
+    } catch (error) {
+        message(error.message, true);
+    }
+});
+
+$("patientForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+        await api("/api/patients/", {
+            method: "POST",
+            body: JSON.stringify({
+                name: $("pName").value,
+                age: Number($("pAge").value),
+                gender: $("pGender").value,
+                address: $("pAddress").value,
+                phone: $("pPhone").value
+            })
+        });
+        $("patientForm").reset();
+        message("Patient added successfully.");
+        await loadData();
+    } catch (error) {
+        message(error.message, true);
+    }
+});
+
+$("doctorForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+        await api("/api/doctors/", {
+            method: "POST",
+            body: JSON.stringify({
+                name: $("dName").value,
+                specialization: $("dSpecialization").value,
+                email: $("dEmail").value,
+                phone: $("dPhone").value
+            })
+        });
+        $("doctorForm").reset();
+        message("Doctor added successfully.");
+        await loadData();
+    } catch (error) {
+        message(error.message, true);
+    }
+});
+
+$("mappingForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+        await api("/api/mappings/", {
+            method: "POST",
+            body: JSON.stringify({
+                patient: Number($("mapPatient").value),
+                doctor: Number($("mapDoctor").value)
+            })
+        });
+        message("Doctor assigned successfully.");
+        await loadData();
+    } catch (error) {
+        message(error.message, true);
+    }
+});
+
+async function loadData() {
+    try {
+        const [patientData, doctorData, mappingData] = await Promise.all([
+            api("/api/patients/"),
+            api("/api/doctors/"),
+            api("/api/mappings/")
+        ]);
+
+        patients = patientData;
+        doctors = doctorData;
+
+        $("patientsList").replaceChildren();
+        $("doctorsList").replaceChildren();
+        $("mappingsList").replaceChildren();
+
+        patients.forEach(patient => {
+            const item = document.createElement("div");
+            item.className = "item";
+            item.textContent =
+                `${patient.name} · Age ${patient.age} · ${patient.gender}`;
+
+            const remove = document.createElement("button");
+            remove.className = "danger";
+            remove.textContent = "Delete";
+            remove.onclick = () => deleteRecord(
+                `/api/patients/${patient.id}/`, "Patient"
+            );
+
+            item.appendChild(document.createElement("br"));
+            item.appendChild(remove);
+            $("patientsList").appendChild(item);
+        });
+
+        doctors.forEach(doctor => {
+            const item = document.createElement("div");
+            item.className = "item";
+            item.textContent =
+                `${doctor.name} · ${doctor.specialization} · ${doctor.email}`;
+
+            const remove = document.createElement("button");
+            remove.className = "danger";
+            remove.textContent = "Delete";
+            remove.onclick = () => deleteRecord(
+                `/api/doctors/${doctor.id}/`, "Doctor"
+            );
+
+            item.appendChild(document.createElement("br"));
+            item.appendChild(remove);
+            $("doctorsList").appendChild(item);
+        });
+
+        patients.forEach(patient => {
+            const option = document.createElement("option");
+            option.value = patient.id;
+            option.textContent = patient.name;
+            $("mapPatient").appendChild(option);
+        });
+
+        doctors.forEach(doctor => {
+            const option = document.createElement("option");
+            option.value = doctor.id;
+            option.textContent = doctor.name;
+            $("mapDoctor").appendChild(option);
+        });
+
+        mappingData.forEach(mapping => {
+            const item = document.createElement("div");
+            item.className = "item";
+
+            const patient = patients.find(
+                p => p.id === mapping.patient
+            );
+            const doctor = mapping.doctor_details;
+
+            item.textContent =
+                `${patient ? patient.name : "Patient"} → ${doctor.name}`;
+
+            const remove = document.createElement("button");
+            remove.className = "danger";
+            remove.textContent = "Unassign";
+            remove.onclick = () => deleteRecord(
+                `/api/mappings/${mapping.id}/`, "Assignment"
+            );
+
+            item.appendChild(document.createElement("br"));
+            item.appendChild(remove);
+            $("mappingsList").appendChild(item);
+        });
+
+        if (!patients.length) {
+            $("patientsList").textContent = "No patients added yet.";
+        }
+        if (!doctors.length) {
+            $("doctorsList").textContent = "No doctors added yet.";
+        }
+        if (!mappingData.length) {
+            $("mappingsList").textContent = "No assignments yet.";
+        }
+    } catch (error) {
+        message(error.message, true);
+    }
+}
+
+async function deleteRecord(url, label) {
+    if (!confirm(`Are you sure you want to delete this ${label.toLowerCase()}?`)) {
+        return;
+    }
+
+    try {
+        await api(url, { method: "DELETE" });
+        message(`${label} deleted successfully.`);
+        await loadData();
+    } catch (error) {
+        message(error.message, true);
+    }
+}
+
+if (token) {
+    showDashboard();
+}
+</script>
+</body>
+</html>
