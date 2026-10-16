@@ -1,0 +1,5 @@
+pip install -r requirements.txt
+CREATE DATABASE healthcare_db;
+python manage.py makemigrations core
+python manage.py migrate
+python manage.py runserver
